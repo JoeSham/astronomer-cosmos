@@ -19,24 +19,40 @@ class GoogleCloudServiceAccountFileProfileMapping(BaseProfileMapping):
     required_fields = [
         "project",
         "dataset",
-        "keyfile",
+        # plus one of: keyfile or keyfile_dict
     ]
 
     airflow_param_mapping = {
         "project": "extra.project",
         "dataset": "dataset",
-        "keyfile": "extra.key_path",
+        # multiple options for keyfile/keyfile_dict param name because of older Airflow versions
+        "keyfile": ["key_path", "extra__google_cloud_platform__key_path", "extra.key_path"],
+        "keyfile_dict": ["keyfile_dict", "extra__google_cloud_platform__keyfile_dict", "extra.keyfile_dict"],
     }
 
     @property
     def profile(self) -> dict[str, Any | None]:
-        "Generates profile. Defaults `threads` to 1."
-        return {
+        """
+            Generates profile. Defaults `threads` to 1.
+            Profile can either use keyfile as path to json file, or keyfile_dict as directly the json dict
+        """
+
+        profile_dict = {
             "type": "bigquery",
-            "method": "service-account",
             "project": self.project,
             "dataset": self.dataset,
             "threads": self.profile_args.get("threads") or 1,
-            "keyfile": self.keyfile,
             **self.profile_args,
         }
+
+        # use keyfile_dict if it exists, otherwise use keyfile
+        try:
+            profile_dict["keyfile_json"] = self.keyfile_dict
+            profile_dict["method"] = "service-account-json"
+        except AttributeError:
+            profile_dict["keyfile"] = self.keyfile
+            profile_dict["method"] = "service-account"
+
+        
+        return profile_dict
+    
